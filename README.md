@@ -1,3 +1,24 @@
+xray-ui 管理脚本使用方法: 
+----------------------------------------------
+xray-ui              - 显示管理菜单
+xray-ui start        - 启动 xray-ui 面板
+xray-ui stop         - 停止 xray-ui 面板
+xray-ui restart      - 重启 xray-ui 面板
+xray-ui status       - 查看 xray-ui 状态
+xray-ui enable       - 设置 xray-ui 开机自启
+xray-ui disable      - 取消 xray-ui 开机自启
+xray-ui log          - 查看 xray-ui 日志
+xray-ui v2-ui        - 迁移本机器的 v2-ui 账号数据至 xray-ui
+xray-ui update       - 更新 xray-ui 面板
+xray-ui geoip        - 更新 geoip ip库
+xray-ui update_shell - 更新 xray-ui 脚本
+xray-ui install      - 安装 xray-ui 面板
+xray-ui x25519       - REALITY  key 生成
+xray-ui ssl_main     - SSL 证书管理
+xray-ui ssl_CF       - Cloudflare SSL 证书
+xray-ui crontab      - 添加geoip到任务计划每天凌晨1.30执行
+xray-ui uninstall    - 卸载 xray-ui 面板
+
 本项目基于上游X-UI项目进行略微的功能改动！后续将紧跟上游X-UI版本更新！在此感谢[vaxilu](https://github.com/vaxilu/x-ui)及各位为此项目做出贡献
 
 ----------------------------------------------------------------------------------------------------------------------------------------------
