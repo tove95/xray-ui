@@ -415,39 +415,6 @@ class WsStreamSettings extends XrayCommonClass {
     }
 }
 
-class HttpStreamSettings extends XrayCommonClass {
-    constructor(path = '/', host = ['']) {
-        super();
-        this.path = path;
-        this.host = host.length === 0 ? [''] : host;
-    }
-
-    addHost(host) {
-        this.host.push(host);
-    }
-
-    removeHost(index) {
-        this.host.splice(index, 1);
-    }
-
-    static fromJson(json = {}) {
-        return new HttpStreamSettings(json.path, json.host);
-    }
-
-    toJson() {
-        let host = [];
-        for (let i = 0; i < this.host.length; ++i) {
-            if (!ObjectUtil.isEmpty(this.host[i])) {
-                host.push(this.host[i]);
-            }
-        }
-        return {
-            path: this.path,
-            host: host,
-        }
-    }
-}
-
 class GrpcStreamSettings extends XrayCommonClass {
     constructor(
         serviceName = "",
@@ -528,7 +495,7 @@ class xHTTPStreamSettings extends XrayCommonClass {
         host = '',
         headers = [],
         scMaxEachPostBytes = 1000000,
-        scMaxConcurrentPosts = 100,
+        scMaxBufferedPosts = 100,
         scMinPostsIntervalMs = 30,
         noSSEHeader = false,
         xPaddingBytes = "100-1000",
@@ -536,7 +503,9 @@ class xHTTPStreamSettings extends XrayCommonClass {
             maxConnections: '16-32',
             maxConcurrency: 0,
             cMaxReuseTimes: '64-128',
-            cMaxLifetimeMs: 0
+            cMaxLifetimeMs: 0,
+            hMaxRequestTimes: '800-900',
+            hKeepAlivePeriod: 45,
         },
         mode = MODE_OPTION.AUTO,
         noGRPCHeader = false,
@@ -546,7 +515,7 @@ class xHTTPStreamSettings extends XrayCommonClass {
         this.host = host;
         this.headers = headers;
         this.scMaxEachPostBytes = scMaxEachPostBytes;
-        this.scMaxConcurrentPosts = scMaxConcurrentPosts;
+        this.scMaxBufferedPosts = scMaxBufferedPosts;
         this.scMinPostsIntervalMs = scMinPostsIntervalMs;
         this.noSSEHeader = noSSEHeader;
         this.xPaddingBytes = RandomUtil.convertXPaddingBytes(xPaddingBytes);
@@ -576,13 +545,13 @@ class xHTTPStreamSettings extends XrayCommonClass {
             json.host,
             XrayCommonClass.toHeaders(json.headers),
             json.scMaxEachPostBytes,
-            json.scMaxConcurrentPosts,
+            json.scMaxBufferedPosts,
             json.scMinPostsIntervalMs,
             json.noSSEHeader,
             json.xPaddingBytes,
             json.xmux,
             json.mode,
-            json.noGRPCHeader,        
+            json.noGRPCHeader,      
         );
     }
 
@@ -596,12 +565,14 @@ class xHTTPStreamSettings extends XrayCommonClass {
         }
         xmuxData.cMaxReuseTimes = RandomUtil.convertXPaddingBytes(this.xmux.cMaxReuseTimes);
         xmuxData.cMaxLifetimeMs = RandomUtil.convertXPaddingBytes(this.xmux.cMaxLifetimeMs);
+        xmuxData.hMaxRequestTimes = RandomUtil.convertXPaddingBytes(this.xmux.hMaxRequestTimes);
+        xmuxData.hKeepAlivePeriod = RandomUtil.convertXPaddingBytes(this.xmux.hKeepAlivePeriod);
         return {
             path: this.path,
             host: this.host,
             headers: XrayCommonClass.toV2Headers(this.headers, false),
             scMaxEachPostBytes: this.scMaxEachPostBytes,
-            scMaxConcurrentPosts: this.scMaxConcurrentPosts,
+            scMaxBufferedPosts: this.scMaxBufferedPosts,
             scMinPostsIntervalMs: this.scMinPostsIntervalMs,
             noSSEHeader: this.noSSEHeader,
             xPaddingBytes: RandomUtil.convertXPaddingBytes(this.xPaddingBytes),
@@ -906,7 +877,6 @@ class StreamSettings extends XrayCommonClass {
         rawSettings = new TcpStreamSettings(),
         kcpSettings = new KcpStreamSettings(),
         wsSettings = new WsStreamSettings(),
-        httpSettings = new HttpStreamSettings(),
         grpcSettings = new GrpcStreamSettings(),
         httpupgradeSettings = new HttpUpgradeStreamSettings(),
         xhttpSettings = new xHTTPStreamSettings(),
@@ -921,7 +891,6 @@ class StreamSettings extends XrayCommonClass {
         this.raw = rawSettings;
         this.kcp = kcpSettings;
         this.ws = wsSettings;
-        this.http = httpSettings;
         this.grpc = grpcSettings;
         this.httpupgrade = httpupgradeSettings;
         this.xhttp = xhttpSettings;
@@ -970,7 +939,6 @@ class StreamSettings extends XrayCommonClass {
             TcpStreamSettings.fromJson(json.rawSettings),
             KcpStreamSettings.fromJson(json.kcpSettings),
             WsStreamSettings.fromJson(json.wsSettings),
-            HttpStreamSettings.fromJson(json.httpSettings),
             GrpcStreamSettings.fromJson(json.grpcSettings),
             HttpUpgradeStreamSettings.fromJson(json.httpupgradeSettings),
             xHTTPStreamSettings.fromJson(json.xhttpSettings),
@@ -989,7 +957,6 @@ class StreamSettings extends XrayCommonClass {
             rawSettings: network === 'raw' ? this.raw.toJson() : undefined,
             kcpSettings: network === 'kcp' ? this.kcp.toJson() : undefined,
             wsSettings: network === 'ws' ? this.ws.toJson() : undefined,
-            httpSettings: network === 'http' ? this.http.toJson() : undefined,
             grpcSettings: network === 'grpc' ? this.grpc.toJson() : undefined,
             httpupgradeSettings: network === 'httpupgrade' ? this.httpupgrade.toJson() : undefined,
             xhttpSettings: network === 'xhttp' ? this.xhttp.toJson() : undefined,
@@ -1104,9 +1071,6 @@ class Inbound extends XrayCommonClass {
         return this.network === "grpc";
     }
 
-    get isH2() {
-        return this.network === "http";
-    }
     get isHttpupgrade() {
         return this.network === "httpupgrade";
     }
@@ -1241,7 +1205,6 @@ class Inbound extends XrayCommonClass {
             case "tcp":
             case "raw":
             case "ws":
-            case "http":
             case "grpc":
             case "httpupgrade":
             case "xhttp":
@@ -1263,7 +1226,7 @@ class Inbound extends XrayCommonClass {
             default:
                 return false;
         }
-        return ['tcp', 'raw', 'http', 'grpc', 'httpupgrade', 'xhttp'].indexOf(this.network) !== -1;
+        return ['tcp', 'raw', 'grpc', 'httpupgrade', 'xhttp'].indexOf(this.network) !== -1;
         //return this.network === "tcp";
     }
 
@@ -1359,10 +1322,6 @@ class Inbound extends XrayCommonClass {
             if (index >= 0) {
                 host = ws.headers[index].value;
             }
-        } else if (network === 'http') {
-            network = 'h2';
-            path = this.stream.http.path;
-            host = this.stream.http.host.join(',');
         } else if (network === 'grpc') {
             path = this.stream.grpc.serviceName;
             authority = this.stream.grpc.authority;
@@ -1466,11 +1425,6 @@ class Inbound extends XrayCommonClass {
                     const host = ws.headers[index].value;
                     params.set("host", host);
                 }
-                break;
-            case "http":
-                const http = this.stream.http;
-                params.set("path", http.path);
-                params.set("host", http.host);
                 break;
             case "grpc":
                 const grpc = this.stream.grpc;
@@ -1605,11 +1559,6 @@ class Inbound extends XrayCommonClass {
                     params.set("host", host);
                 }
                 break;
-            case "http":
-                const http = this.stream.http;
-                params.set("path", http.path);
-                params.set("host", http.host);
-                break;
             case "grpc":
                 const grpc = this.stream.grpc;
                 params.set("serviceName", grpc.serviceName);
@@ -1727,11 +1676,6 @@ class Inbound extends XrayCommonClass {
                     const host = ws.headers[index].value;
                     params.set("host", host);
                 }
-                break;
-            case "http":
-                const http = this.stream.http;
-                params.set("path", http.path);
-                params.set("host", http.host);
                 break;
             case "grpc":
                 const grpc = this.stream.grpc;
