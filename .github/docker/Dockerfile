@@ -1,7 +1,7 @@
 # ========================================================
 # Stage: build
 # ========================================================
-FROM  golang:1.23.0-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:alpine AS build
 WORKDIR /app
 ARG TARGETARCH
 

@@ -499,6 +499,7 @@ class xHTTPStreamSettings extends XrayCommonClass {
         scMinPostsIntervalMs = 30,
         noSSEHeader = false,
         xPaddingBytes = "100-1000",
+        scStreamUpServerSecs = "20-80",
         xmux = {
             maxConnections: '16-32',
             maxConcurrency: 0,
@@ -519,6 +520,7 @@ class xHTTPStreamSettings extends XrayCommonClass {
         this.scMinPostsIntervalMs = scMinPostsIntervalMs;
         this.noSSEHeader = noSSEHeader;
         this.xPaddingBytes = RandomUtil.convertXPaddingBytes(xPaddingBytes);
+        this.scStreamUpServerSecs = RandomUtil.convertXPaddingBytes(scStreamUpServerSecs);
         this.xmux = xmux;
         this.mode = mode;
         this.noGRPCHeader = noGRPCHeader;
@@ -549,9 +551,10 @@ class xHTTPStreamSettings extends XrayCommonClass {
             json.scMinPostsIntervalMs,
             json.noSSEHeader,
             json.xPaddingBytes,
+            json.scStreamUpServerSecs,
             json.xmux,
             json.mode,
-            json.noGRPCHeader,      
+            json.noGRPCHeader,
         );
     }
 
@@ -576,6 +579,7 @@ class xHTTPStreamSettings extends XrayCommonClass {
             scMinPostsIntervalMs: this.scMinPostsIntervalMs,
             noSSEHeader: this.noSSEHeader,
             xPaddingBytes: RandomUtil.convertXPaddingBytes(this.xPaddingBytes),
+            scStreamUpServerSecs: RandomUtil.convertXPaddingBytes(this.scStreamUpServerSecs),
             xmux: xmuxData,
             mode: this.mode,
             noGRPCHeader: this.noGRPCHeader,
@@ -721,31 +725,28 @@ TlsStreamSettings.Settings = class extends XrayCommonClass {
 class ReaLITyStreamSettings extends XrayCommonClass {
     constructor(show = false,
         fingerprint = UTLS_FINGERPRINT.UTLS_CHROME,
-        dest = 'www.lovelive-anime.jp:443',
+        target = 'www.lovelive-anime.jp:443',
         xver = 0,
         serverNames = 'lovelive-anime.jp\nwww.lovelive-anime.jp',
         privateKey = '',
         publicKey = '',
+        mldsa65Seed = '',
+        mldsa65Verify = '',
         minClientVer = '',
         maxClientVer = '',
         maxTimeDiff = 0,
         shortIds = RandomUtil.randowShortId(),
     ) {
         super();
-        if (privateKey === '') {
-            RandomUtil.xraysecretkey().then((res) => {
-                this.privateKey = res.data.obj.key
-                this.publicKey = res.data.obj.value
-            })
-        } else {
-            this.privateKey = privateKey
-            this.publicKey = publicKey
-        }
         this.show = show;
         this.fingerprint = fingerprint;
-        this.dest = dest;
+        this.target = target;
         this.xver = xver;
         this.serverNames = serverNames instanceof Array ? serverNames.join('\n') : serverNames;
+        this.privateKey = privateKey
+        this.publicKey = publicKey
+        this.mldsa65Seed = mldsa65Seed;
+        this.mldsa65Verify = mldsa65Verify;
         this.minClientVer = minClientVer;
         this.maxClientVer = maxClientVer;
         this.maxTimeDiff = maxTimeDiff;
@@ -757,11 +758,13 @@ class ReaLITyStreamSettings extends XrayCommonClass {
         return new ReaLITyStreamSettings(
             json.show,
             json.fingerprint,
-            json.dest,
+            json.target,
             json.xver,
             json.serverNames,
             json.privateKey,
             json.publicKey,
+            json.mldsa65Seed,
+            json.mldsa65Verify,
             json.minClientVer,
             json.maxClientVer,
             json.maxTimeDiff,
@@ -773,11 +776,13 @@ class ReaLITyStreamSettings extends XrayCommonClass {
         return {
             show: this.show,
             fingerprint: this.fingerprint,
-            dest: this.dest,
+            target: this.target,
             xver: this.xver,
             serverNames: this.serverNames.split('\n'),
             privateKey: this.privateKey,
             publicKey: this.publicKey,
+            mldsa65Seed: this.mldsa65Seed,
+            mldsa65Verify: this.mldsa65Verify,
             minClientVer: this.minClientVer,
             maxClientVer: this.maxClientVer,
             maxTimeDiff: this.maxTimeDiff,
@@ -966,25 +971,59 @@ class StreamSettings extends XrayCommonClass {
 }
 
 class Sniffing extends XrayCommonClass {
-    constructor(enabled = true, destOverride = ['http', 'tls', 'quic']) {
+    constructor(
+        enabled = false,
+        destOverride = ['http', 'tls', 'quic', 'fakedns'],
+        metadataOnly = false,
+        domainsExcluded = [],
+        routeOnly = false
+    ) {
         super();
         this.enabled = enabled;
         this.destOverride = destOverride;
+        this.metadataOnly = metadataOnly;
+        this.domainsExcluded = Array.isArray(domainsExcluded)
+            ? domainsExcluded.join('\n')
+            : (typeof domainsExcluded === 'string' ? domainsExcluded : '');
+        this.routeOnly = routeOnly;
     }
 
     static fromJson(json = {}) {
         let destOverride = ObjectUtil.clone(json.destOverride);
         if (!ObjectUtil.isEmpty(destOverride) && !ObjectUtil.isArrEmpty(destOverride)) {
             if (ObjectUtil.isEmpty(destOverride[0])) {
-                destOverride = ['http', 'tls', 'quic'];
+                destOverride = ['http', 'tls', 'quic', 'fakedns'];
             }
         }
+
+        let domainsExcluded = json.domainsExcluded;
+        if (typeof domainsExcluded === 'string') {
+            domainsExcluded = domainsExcluded.split('\n').map(s => s.trim()).filter(Boolean);
+        }
+
         return new Sniffing(
             !!json.enabled,
             destOverride,
+            json.metadataOnly,
+            domainsExcluded,
+            json.routeOnly
         );
     }
+
+    toJson() {
+        return {
+            enabled: this.enabled,
+            destOverride: this.destOverride,
+            metadataOnly: this.metadataOnly,
+            domainsExcluded: typeof this.domainsExcluded === 'string'
+                ? this.domainsExcluded.split('\n').map(s => s.trim()).filter(Boolean)
+                : [],
+            routeOnly: this.routeOnly,
+        };
+    }
 }
+
+
 
 class Inbound extends XrayCommonClass {
     constructor(port = RandomUtil.randomIntRange(10000, 60000),
@@ -1355,7 +1394,21 @@ class Inbound extends XrayCommonClass {
                 sni = this.stream.tls.settings[0]['serverName'];
             }
         }
+        if (address.startsWith('/')) {
+            let host = window.location.hostname; // hostname 一般不带 []
 
+            // 确保去除方括号（万一）
+            if (host.startsWith('[') && host.endsWith(']')) {
+                host = host.slice(1, -1);
+            }
+
+            address = host;
+        }
+
+        // 这里再做一次清理（保险）
+        if (address.startsWith('[') && address.endsWith(']')) {
+            address = address.slice(1, -1);
+        }
         let obj = {
             v: '2',
             ps: remark,
@@ -1487,6 +1540,10 @@ class Inbound extends XrayCommonClass {
                 params.set("pbk", this.stream.reality.publicKey);
 
             }
+            if (this.stream.reality.mldsa65Verify != "") {
+                params.set("pqv", this.stream.reality.mldsa65Verify);
+
+            }
             if (this.stream.network === 'tcp') {
                 params.set("flow", this.settings.vlesses[0].flow);
             }
@@ -1501,6 +1558,10 @@ class Inbound extends XrayCommonClass {
             if (this.stream.reality.fingerprint != "") {
                 params.set("fp", this.stream.reality.fingerprint);
             }
+        }
+
+        if (address.startsWith('/')) {
+            address = window.location.hostname; // 使用当前域名
         }
 
         const link = `vless://${uuid}@${address}:${port}`;
@@ -1603,8 +1664,9 @@ class Inbound extends XrayCommonClass {
                 }
             }
         }
-
-
+        if (!address || address.startsWith('/')) {
+            address = window.location.hostname; // 使用当前域名
+        }
         if (settings.method == SSMethods.BLAKE3_AES_128_GCM || settings.method == SSMethods.BLAKE3_AES_256_GCM || settings.method == SSMethods.BLAKE3_CHACHA20_POLY1305) {
             const link = `ss://${settings.method}:${settings.password}@${address}:${this.port}#${encodeURIComponent(remark)}`;
 
@@ -1651,18 +1713,18 @@ class Inbound extends XrayCommonClass {
                     }
                 }
                 break;
-                case "raw":
-                    const raw = this.stream.raw;
-                    if (raw.type === 'http') {
-                        const request = raw.request;
-                        params.set("path", request.path.join(','));
-                        const index = request.headers.findIndex(header => header.name.toLowerCase() === 'host');
-                        if (index >= 0) {
-                            const host = request.headers[index].value;
-                            params.set("host", host);
-                        }
+            case "raw":
+                const raw = this.stream.raw;
+                if (raw.type === 'http') {
+                    const request = raw.request;
+                    params.set("path", request.path.join(','));
+                    const index = request.headers.findIndex(header => header.name.toLowerCase() === 'host');
+                    if (index >= 0) {
+                        const host = request.headers[index].value;
+                        params.set("host", host);
                     }
-                    break;
+                }
+                break;
             case "kcp":
                 const kcp = this.stream.kcp;
                 params.set("headerType", kcp.type);
@@ -1731,7 +1793,10 @@ class Inbound extends XrayCommonClass {
             if (this.stream.reality.publicKey != "") {
                 params.set("pbk", this.stream.reality.publicKey);
             }
+            if (this.stream.reality.mldsa65Verify != "") {
+                params.set("pqv", this.stream.reality.mldsa65Verify);
 
+            }
             // var shortIds1 = this.stream.reality.shortIds.split(/,|，|\s+/);
             // var index1 = Math.floor(Math.random() * shortIds1.length);
             // var value1 = shortIds1[index1];
@@ -1740,6 +1805,9 @@ class Inbound extends XrayCommonClass {
             if (this.stream.reality.fingerprint != "") {
                 params.set("fp", this.stream.reality.fingerprint);
             }
+        }
+        if (address.startsWith('/')) {
+            address = window.location.hostname; // 使用当前域名
         }
         const link = `trojan://${settings.clients[0].password}@${address}:${port}`;
         const url = new URL(link);

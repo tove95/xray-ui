@@ -18,13 +18,13 @@ jobs:
           - 386
           - armv5
           - s390x
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v5.2.0
+        uses: actions/setup-go@v5.5.0
         with:
           go-version: "stable"
 
